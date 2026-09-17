@@ -1,0 +1,35 @@
+﻿# Environment variables & Secrets (Protected from GitHub Secret Scanning)
+.env
+.env.*
+config/credentials.json
+test_gemini_key.py
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+.venv/
+env/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.class
+.pytest_cache/
+
+# Build artifacts
+frontend/dist/
+frontend/build/
+dist/
+build/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs & temp
+*.log
+scratch/
