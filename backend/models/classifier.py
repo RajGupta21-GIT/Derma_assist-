@@ -37,12 +37,60 @@ class DermaClassifier:
             self.model = None
             self.is_loaded = False
 
+    def compute_melanin_index(self, image: Image.Image) -> dict:
+        """
+        Computes lesion Melanin Index (MI) relative to surrounding baseline skin:
+        - Normalizes for Fitzpatrick phototypes IV-VI (Indian skin tones).
+        - Prevents elevated constitutional baseline melanin from being misclassified as malignancy.
+        - Calculates Delta Contrast = (Lesion MI - Baseline MI) / (|Baseline MI| + epsilon)
+        """
+        try:
+            img_rgb = image.convert("RGB").resize((128, 128))
+            arr = np.array(img_rgb, dtype=np.float32) / 255.0
+            r, g = arr[:, :, 0], arr[:, :, 1]
+
+            # Melanin Index map (optical pigment density approximation)
+            melanin_map = np.log(1.0 / (r + 1e-5)) - np.log(1.0 / (g + 1e-5))
+
+            # Lesion central region (central 50% box: rows 32..96, cols 32..96)
+            lesion_patch = melanin_map[32:96, 32:96]
+            lesion_mi = float(np.mean(lesion_patch))
+
+            # Baseline peripheral skin (outer 16px perimeter)
+            mask = np.ones((128, 128), dtype=bool)
+            mask[16:112, 16:112] = False
+            baseline_patch = melanin_map[mask]
+            baseline_mi = float(np.mean(baseline_patch))
+
+            epsilon = 1e-4
+            delta_contrast = (lesion_mi - baseline_mi) / (abs(baseline_mi) + epsilon)
+
+            # High baseline melanin indicates darker phototypes (Fitzpatrick IV-VI)
+            high_baseline = bool(baseline_mi > 0.10 or np.mean(arr[mask, 0]) < 0.60)
+
+            return {
+                "lesion_mi": round(lesion_mi, 4),
+                "baseline_mi": round(baseline_mi, 4),
+                "delta_contrast": round(delta_contrast, 4),
+                "high_baseline_melanin": high_baseline,
+                "phototype_detected": "Fitzpatrick IV-VI (Darker/Indian Tone)" if high_baseline else "Fitzpatrick I-III (Lighter Tone)"
+            }
+        except Exception as e:
+            return {
+                "lesion_mi": 0.0,
+                "baseline_mi": 0.0,
+                "delta_contrast": 0.0,
+                "high_baseline_melanin": False,
+                "phototype_detected": "Standard"
+            }
+
     def predict(self, image: Image.Image) -> dict:
         """
         Runs diagnostic inference on an input PIL image:
         - Extracts multi-scale spatial and dermatological features
-        - Generates softmax probabilities across all 8 classes
-        - Ranks top-3 differential diagnoses
+        - Applies logit temperature scaling (tau = 0.85) for sharpened confidence
+        - Computes lesion Melanin Index relative to surrounding baseline skin
+        - Normalizes for Fitzpatrick IV-VI phototypes
         - Computes Grad-CAM attention heatmap
         """
         start_time = time.time()
@@ -54,12 +102,35 @@ class DermaClassifier:
         features = extract_dermatology_features(image)
         feats_2d = np.expand_dims(features, axis=0)
 
-        # Get probabilities
-        if hasattr(self.model, "predict_proba"):
-            probs = self.model.predict_proba(feats_2d)[0]
+        # 1. Compute raw logits and apply temperature scaling (tau = 0.85)
+        tau = 0.85
+        if hasattr(self.model, "decision_function"):
+            try:
+                raw_logits = self.model.decision_function(feats_2d)[0]
+                scaled_logits = raw_logits / tau
+                exp_logits = np.exp(scaled_logits - np.max(scaled_logits))
+                probs = exp_logits / np.sum(exp_logits)
+            except Exception:
+                probs = self.model.predict_proba(feats_2d)[0]
+        elif hasattr(self.model, "predict_proba"):
+            raw_p = self.model.predict_proba(feats_2d)[0]
+            eps = 1e-7
+            raw_p = np.clip(raw_p, eps, 1.0 - eps)
+            scaled = np.log(raw_p) / tau
+            exp_s = np.exp(scaled - np.max(scaled))
+            probs = exp_s / np.sum(exp_s)
         else:
-            # Fallback uniform
             probs = np.ones(len(self.classes)) / len(self.classes)
+
+        # 2. Melanin Index (MI) Calibration for Indian Skin Tones (Fitzpatrick IV-VI)
+        melanin_metrics = self.compute_melanin_index(image)
+        if "melanoma_suspicious" in self.classes:
+            mel_idx = self.classes.index("melanoma_suspicious")
+            # If surrounding skin has high constitutional melanin and lesion contrast is low,
+            # avoid falsely classifying baseline brown skin tone as malignancy
+            if melanin_metrics["high_baseline_melanin"] and melanin_metrics["delta_contrast"] < 0.15:
+                probs[mel_idx] *= 0.60
+                probs = probs / np.sum(probs)
 
         # Sort top indices
         top_indices = np.argsort(probs)[::-1]
@@ -101,6 +172,7 @@ class DermaClassifier:
             "overall_risk": top_pred["risk_level"],
             "predictions": predictions,
             "gradcam": gradcam_res,
+            "melanin_metrics": melanin_metrics,
             "inference_time_ms": inference_time_ms
         }
 

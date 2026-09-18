@@ -166,3 +166,42 @@ def test_pdf_report_export():
     content = response.content
     assert content.startswith(b"%PDF")
     assert len(content) > 1000
+
+
+def test_synthesize_endpoint_with_questionnaire():
+    import json
+    img_bytes = create_test_image_bytes()
+    b64_str = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+    
+    questionnaire = {
+        "chief_complaint": "red_rash",
+        "fitzpatrick_tone": "type_iv",
+        "location": "groin_folds",
+        "duration": "subacute",
+        "sensations": ["itch"],
+        "branch_data": {
+            "annular_ring": True,
+            "tropical_humidity": True,
+            "otc_steroid_use": True
+        },
+        "prior_treatments": "Betnovate-N cream used for 1 week"
+    }
+
+    response = client.post(
+        "/api/synthesize",
+        data={
+            "image_base64": b64_str,
+            "questionnaire_json": json.dumps(questionnaire)
+        }
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "top_condition" in data
+    assert "predictions" in data
+    assert "gradcam" in data
+    assert "fusion_rationale" in data
+    # Due to annular ring, groin folds, tropical humidity, and Betnovate, Tinea/Fungal should rank #1
+    assert "Fungal" in data["top_condition"] or "Tinea" in data["top_condition"]
+    # Check that Tinea Incognito / steroid alert was triggered
+    assert any("steroid" in alert.lower() or "tinea incognito" in alert.lower() for alert in data.get("red_flag_alerts", []))
+

@@ -70,7 +70,10 @@ def generate_gradcam_overlay(image: Image.Image, predicted_class: str, target_si
     smooth_act = np.array(act_img, dtype=np.float32) / 255.0
 
     # Apply Jet Colormap (blue = low attention, green = medium, red = high attention)
-    colormap = cm.get_cmap("jet")
+    if hasattr(matplotlib, "colormaps"):
+        colormap = matplotlib.colormaps["jet"]
+    else:
+        colormap = cm.get_cmap("jet")
     heatmap_rgba = colormap(smooth_act)  # (H, W, 4) in [0, 1]
     heatmap_rgb = heatmap_rgba[:, :, :3]
 

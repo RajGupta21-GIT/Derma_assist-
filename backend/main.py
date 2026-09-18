@@ -45,9 +45,11 @@ app.add_middleware(
 
 # Request Models
 class ChatRequest(BaseModel):
-    message: str
+    message: Optional[str] = None
+    messages: Optional[List[Dict[str, Any]]] = None
     history: Optional[List[Dict[str, str]]] = []
     vision_context: Optional[Dict[str, Any]] = None
+    analysis_context: Optional[Dict[str, Any]] = None
     questionnaire_context: Optional[Dict[str, Any]] = None
     api_key: Optional[str] = None
 
@@ -58,9 +60,18 @@ class ReportRequest(BaseModel):
     patient_name: Optional[str] = "Anonymous Patient"
     patient_age: Optional[str] = "N/A"
     patient_gender: Optional[str] = "N/A"
+    patient_info: Optional[Dict[str, Any]] = None
     questionnaire_data: Optional[Dict[str, Any]] = None
     classification_result: Optional[Dict[str, Any]] = None
+    analysis_data: Optional[Dict[str, Any]] = None
     original_img_base64: Optional[str] = None
+    original_image_b64: Optional[str] = None
+    gradcam_image_b64: Optional[str] = None
+    chat_summary: Optional[str] = None
+
+class ClassifyJsonRequest(BaseModel):
+    image_base64: Optional[str] = None
+    image: Optional[str] = None
 
 # Routes
 @app.get("/api/health")
@@ -68,9 +79,11 @@ def health_check():
     return {
         "status": "online",
         "service": "Derma Assist Multimodal Backend",
-        "version": "2.0.0",
+        "version": "2.5.0",
         "model_loaded": classifier.is_loaded,
         "classes_count": len(CLASSES),
+        "class_count": len(CLASSES),
+        "supported_classes": CLASSES,
         "gemini_configured": gemini_service.is_configured()
     }
 
@@ -80,6 +93,31 @@ def get_classes():
         "classes": CLASSES,
         "metadata": CLASS_METADATA
     }
+
+@app.get("/api/demo-samples")
+def get_demo_samples():
+    """Returns curated demo samples for offline exhibition & triage testing."""
+    samples = []
+    demo_dir = Path(__file__).resolve().parent / "demo_samples"
+    sample_files = [
+        ("sample_eczema.jpg", "eczema", "Eczema (Atopic Dermatitis)", "Moderate"),
+        ("sample_fungal.jpg", "fungal_infections", "Fungal Infection (Tinea / Ringworm)", "Mild-Moderate"),
+        ("sample_psoriasis.jpg", "psoriasis", "Psoriasis / Lichen Planus", "Moderate"),
+        ("sample_acne.jpg", "acne_rosacea", "Acne Vulgaris & Rosacea", "Mild"),
+        ("sample_melanoma.jpg", "melanoma_suspicious", "Suspicious Lesion / Melanoma", "High / Urgent Attention"),
+    ]
+    for fn, cid, title, risk in sample_files:
+        fpath = demo_dir / fn
+        if fpath.exists():
+            with open(fpath, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+            samples.append({
+                "id": cid,
+                "title": title,
+                "risk_level": risk,
+                "image_base64": f"data:image/jpeg;base64,{b64}"
+            })
+    return {"samples": samples}
 
 @app.post("/api/classify")
 async def classify_image(file: Optional[UploadFile] = File(None), image_base64: Optional[str] = Form(None)):
@@ -104,10 +142,37 @@ async def classify_image(file: Optional[UploadFile] = File(None), image_base64: 
 
     try:
         results = classifier.predict(pil_img)
+        # Attach backward-compatible aliases
+        if results.get("predictions"):
+            results["top_probability"] = round(float(results["predictions"][0]["confidence"]) * 100, 1)
+            results["differential_diagnoses"] = results["predictions"]
+        if results.get("gradcam"):
+            results["gradcam_base64"] = results["gradcam"].get("overlay_base64", "")
         return results
     except Exception as e:
         print(f"[Classify Error] {e}")
         raise HTTPException(status_code=500, detail=f"Diagnostic model inference failed: {str(e)}")
+
+@app.post("/api/classify-json")
+async def classify_image_json(req: ClassifyJsonRequest):
+    """JSON wrapper for image classification."""
+    b64_data = req.image_base64 or req.image
+    if not b64_data:
+        raise HTTPException(status_code=400, detail="No image_base64 provided.")
+    try:
+        clean_b64 = b64_data.split(",")[-1]
+        raw_bytes = base64.b64decode(clean_b64)
+        pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+        results = classifier.predict(pil_img)
+        if results.get("predictions"):
+            results["top_probability"] = round(float(results["predictions"][0]["confidence"]) * 100, 1)
+            results["differential_diagnoses"] = results["predictions"]
+        if results.get("gradcam"):
+            results["gradcam_base64"] = results["gradcam"].get("overlay_base64", "")
+        return results
+    except Exception as e:
+        print(f"[Classify-JSON Error] {e}")
+        raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
 
 @app.post("/api/synthesize")
 async def synthesize_multimodal(
@@ -170,14 +235,44 @@ async def chat_consult(req: ChatRequest):
     if req.api_key:
         gemini_service.update_api_key(req.api_key)
 
+    # Extract user message
+    user_msg = req.message
+    if not user_msg and req.messages:
+        last_m = req.messages[-1]
+        user_msg = last_m.get("content") or last_m.get("text") or ""
+    user_msg = user_msg or "Hello, please provide clinical guidance on my skin presentation."
+
+    # Extract history
+    history = req.history or []
+    if not history and req.messages and len(req.messages) > 1:
+        for m in req.messages[:-1]:
+            history.append({
+                "role": m.get("role", "user"),
+                "text": m.get("content") or m.get("text") or ""
+            })
+
+    # Context
+    v_ctx = req.vision_context or req.analysis_context
+
     reply = gemini_service.chat_consult(
-        message=req.message,
-        history=req.history,
-        vision_context=req.vision_context
+        message=user_msg,
+        history=history,
+        vision_context=v_ctx,
+        questionnaire_context=req.questionnaire_context
+    )
+
+    # Emergency red flag check on user query or context
+    lower_query = user_msg.lower()
+    has_red_flags = any(rf in lower_query for rf in ["fever", "bleeding", "rapidly spreading", "rapidly spread", "angioedema", "facial swelling", "difficulty breathing", "severe pain"])
+    red_flag_alert = (
+        "URGENT CLINICAL WARNING: Reported symptoms (fever, bleeding, or rapid spread) indicate an emergency or high-risk presentation. Seek immediate medical care."
+        if has_red_flags else None
     )
 
     return {
         "reply": reply,
+        "has_red_flags": has_red_flags,
+        "red_flag_alert": red_flag_alert,
         "is_configured": gemini_service.is_configured()
     }
 
@@ -195,13 +290,23 @@ async def generate_report(req: ReportRequest):
     Generates and returns the downloadable PDF Medical Consultation Report with clinical history.
     """
     try:
+        p_name = req.patient_name or "Anonymous Patient"
+        p_age = req.patient_age
+        p_gender = req.patient_gender
+        if req.patient_info:
+            p_age = req.patient_info.get("age", p_age) or p_age
+            p_gender = req.patient_info.get("gender", p_gender) or p_gender
+
+        class_res = req.classification_result or req.analysis_data or {}
+        orig_img = req.original_img_base64 or req.original_image_b64
+
         pdf_bytes = generate_pdf_report(
-            patient_name=req.patient_name or "Anonymous Patient",
-            patient_age=req.patient_age or "N/A",
-            patient_gender=req.patient_gender or "N/A",
+            patient_name=p_name,
+            patient_age=p_age or "N/A",
+            patient_gender=p_gender or "N/A",
             questionnaire_data=req.questionnaire_data or {},
-            classification_result=req.classification_result or {},
-            original_img_base64=req.original_img_base64
+            classification_result=class_res,
+            original_img_base64=orig_img
         )
         return Response(
             content=pdf_bytes,

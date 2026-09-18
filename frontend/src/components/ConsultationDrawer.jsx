@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, Bot, User, Stethoscope, AlertTriangle, ShieldCheck, CornerDownLeft } from 'lucide-react';
+import { X, Send, Bot, User, Stethoscope, AlertTriangle, ShieldCheck, CornerDownLeft, PhoneCall } from 'lucide-react';
 import { sendChatMessage } from '../services/api';
+import VoiceConsultModal from './VoiceConsultModal';
 
 const QUICK_CLINICAL_QUESTIONS = [
   'What key questions should I ask my dermatologist?',
@@ -20,6 +21,7 @@ export default function ConsultationDrawer({
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const messagesEndRef = useRef(null);
 
   // Initialize or update conversation greeting when opened or when visionContext changes
@@ -148,13 +150,24 @@ export default function ConsultationDrawer({
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsVoiceModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                title="Start Voice Consult Call"
+              >
+                <PhoneCall className="w-3.5 h-3.5 text-teal-600" />
+                <span className="hidden sm:inline">Voice Call</span>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Active Case Header Pill */}
@@ -263,6 +276,15 @@ export default function ConsultationDrawer({
           </div>
         </div>
       </div>
+
+      {/* Voice Consult Modal */}
+      <VoiceConsultModal
+        isOpen={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
+        visionContext={visionContext}
+        questionnaireContext={questionnaireContext}
+        apiKey={apiKey}
+      />
     </div>
   );
 }

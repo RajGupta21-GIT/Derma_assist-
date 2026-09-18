@@ -43,6 +43,18 @@ CLASSES = [
     "melanoma_suspicious"
 ]
 
+# Display names matching CLASSES
+CLASS_NAMES = [
+    "Eczema (Atopic Dermatitis)",
+    "Contact Dermatitis / Urticaria",
+    "Fungal Infection (Tinea / Ringworm)",
+    "Psoriasis / Lichen Planus",
+    "Acne Vulgaris & Rosacea",
+    "Viral Eruption (Herpes Zoster / Shingles)",
+    "Benign Melanocytic Nevus (Mole)",
+    "Suspicious Lesion / Melanoma"
+]
+
 CLASS_METADATA = {
     "eczema": {
         "display_name": "Eczema (Atopic Dermatitis)",

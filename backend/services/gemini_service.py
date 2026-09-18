@@ -120,9 +120,16 @@ class GeminiService:
     def is_configured(self) -> bool:
         return bool(self.api_key and self._client is not None)
 
-    def chat_consult(self, message: str, history: List[Dict[str, str]] = None, vision_context: Optional[Dict[str, Any]] = None) -> str:
+    def chat_consult(
+        self,
+        message: str,
+        history: List[Dict[str, str]] = None,
+        vision_context: Optional[Dict[str, Any]] = None,
+        questionnaire_context: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
         Executes clinical consultation chat using Gemini 2.5 Flash or intelligent offline fallback.
+        Takes vision context and sequential intake questionnaire context.
         """
         top_condition = "eczema"
         top_confidence = "N/A"
@@ -137,7 +144,17 @@ class GeminiService:
 
         try:
             # Build contextual prompt with vision analysis and prior history
-            context_text = f"[Clinical Presentation Context: Patient has uploaded skin photography. Computer vision & Bayesian synthesis top finding: {top_condition} ({top_confidence} probability).]\n\n"
+            intake_summary = ""
+            if questionnaire_context:
+                cc = questionnaire_context.get("chief_complaint", "")
+                loc = questionnaire_context.get("location", "")
+                dur = questionnaire_context.get("duration", "")
+                sens = ", ".join(questionnaire_context.get("sensations", []))
+                tone = questionnaire_context.get("fitzpatrick_tone", "")
+                pt = questionnaire_context.get("prior_treatments", "")
+                intake_summary = f" Intake: Complaint={cc}, Region={loc}, Timeline={dur}, Sensations={sens}, Phototype={tone}, PriorCare={pt}."
+
+            context_text = f"[Clinical Presentation Context: Patient has uploaded skin photography. Computer vision & Bayesian synthesis top finding: {top_condition} ({top_confidence} probability).{intake_summary}]\n\n"
             
             prompt_parts = [context_text]
             if history:

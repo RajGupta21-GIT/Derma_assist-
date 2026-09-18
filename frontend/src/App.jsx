@@ -152,6 +152,7 @@ export default function App() {
             onOpenReportModal={() => setIsReportModalOpen(true)}
             onStartNewAssessment={handleResetAssessment}
             onBackToCapture={() => setCurrentView('capture')}
+            apiKey={apiKey}
           />
         )}
       </main>
