@@ -2,7 +2,8 @@
  * Derma Assist Multimodal API Service
  */
 
-const API_BASE = '/api';
+const BASE_URL = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '';
+const API_BASE = `${BASE_URL}/api`;
 
 export async function checkHealth() {
   try {
@@ -34,11 +35,19 @@ export async function synthesizeMultimodal({ file, base64, questionnaire }) {
   });
 
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail || 'Multimodal synthesis failed');
+    let errMessage = 'Multimodal synthesis failed';
+    try {
+      const err = await res.json();
+      errMessage = err.error || err.detail || errMessage;
+    } catch (e) {}
+    throw new Error(errMessage);
   }
 
-  return await res.json();
+  const data = await res.json();
+  if (data.is_valid_skin === false) {
+    throw new Error(data.error || 'No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area.');
+  }
+  return data;
 }
 
 export async function sendChatMessage({ message, history, visionContext, questionnaireContext, apiKey }) {

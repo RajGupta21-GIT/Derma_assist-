@@ -147,14 +147,40 @@ export default function VoiceConsultModal({
       .trim();
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.05;
+    utterance.rate = 0.98;
+    utterance.pitch = 1.0;
 
-    // Pick a natural English female/warm voice if available
+    // Detect if the response is in Hindi (Devanagari characters or common Hindi words)
+    const hasDevanagari = /[\u0900-\u097F]/.test(cleanText);
+    const hasHindiVocabulary = /\b(namaste|aap|kya|twacha|khujli|dawai|doctor|daag|jalan|ilaj|hai|hain|karein|chahiye|dekhiye|kripya|sujan)\b/i.test(cleanText);
+    const isHindiResponse = hasDevanagari || hasHindiVocabulary;
+
     const voices = availableVoices.length > 0 ? availableVoices : (synthRef.current ? synthRef.current.getVoices() : []);
-    const preferredVoice = voices.find(
-      (v) => v.name.includes('Samantha') || v.name.includes('Google UK English Female') || (v.lang === 'en-US' && v.name.includes('Female'))
-    ) || voices.find((v) => v.lang.startsWith('en'));
+
+    let preferredVoice = null;
+    if (isHindiResponse) {
+      utterance.lang = 'hi-IN';
+      // Search for authentic Indian Hindi speech synthesis engines
+      preferredVoice = voices.find(
+        (v) => (v.lang === 'hi-IN' || v.lang.startsWith('hi')) && (
+          v.name.includes('Google') ||
+          v.name.includes('Swara') ||
+          v.name.includes('Hemant') ||
+          v.name.includes('Madhur') ||
+          v.name.includes('Kalpana')
+        )
+      ) || voices.find(
+        (v) => v.lang === 'hi-IN' || v.lang.startsWith('hi') || v.name.includes('Hindi') || v.name.includes('हिन्दी')
+      ) || voices.find(
+        // High quality Indian English fallback if Hindi voice pack not installed on Windows
+        (v) => v.lang === 'en-IN' || v.name.includes('India') || v.name.includes('Heera') || v.name.includes('Ravi')
+      );
+    } else {
+      utterance.lang = 'en-US';
+      preferredVoice = voices.find(
+        (v) => v.name.includes('Samantha') || v.name.includes('Google UK English Female') || (v.lang === 'en-US' && v.name.includes('Female'))
+      ) || voices.find((v) => v.lang.startsWith('en'));
+    }
 
     if (preferredVoice) {
       utterance.voice = preferredVoice;

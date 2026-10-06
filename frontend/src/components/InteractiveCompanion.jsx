@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Stethoscope, Sparkles, AlertTriangle, ShieldCheck, Volume2, VolumeX, X, MessageSquareHeart } from 'lucide-react';
+import { Stethoscope, Sparkles, AlertTriangle, ShieldCheck, X } from 'lucide-react';
 
 export default function InteractiveCompanion({
   step = 1,
@@ -11,8 +11,6 @@ export default function InteractiveCompanion({
   branchData = {},
   priorTreatments = '',
   redFlags = [],
-  soundEnabled = true,
-  onToggleSound,
 }) {
   const [comment, setComment] = useState('Hello! I am Dr. Elena Vance, your clinical companion. I am analyzing your responses in real time.');
   const [mood, setMood] = useState('listening'); // 'listening' | 'insight' | 'alert' | 'reassurance'
@@ -231,18 +229,8 @@ export default function InteractiveCompanion({
           </p>
         </div>
 
-        {/* Controls: Sound toggle & Minimize */}
+        {/* Controls: Minimize */}
         <div className="absolute top-3 right-3 flex items-center gap-1">
-          {onToggleSound && (
-            <button
-              type="button"
-              onClick={onToggleSound}
-              className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200/60 transition-colors"
-              title={soundEnabled ? 'Mute micro-interaction audio' : 'Enable micro-interaction audio'}
-            >
-              {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-teal-700" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => setIsMinimized(true)}

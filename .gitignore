@@ -1,4 +1,4 @@
-﻿# Environment variables & Secrets (Protected from GitHub Secret Scanning)
+# Environment variables & Secrets (Protected from GitHub Secret Scanning)
 .env
 .env.*
 config/credentials.json
@@ -33,3 +33,5 @@ Thumbs.db
 # Logs & temp
 *.log
 scratch/
+/derma_model.pth
+test_live_verify.py

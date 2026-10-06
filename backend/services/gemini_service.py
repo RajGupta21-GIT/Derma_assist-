@@ -7,6 +7,7 @@ medical safety guardrails, red-flag screening, and offline fallback.
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from PIL import Image
 from backend.config import CLASS_METADATA, BASE_DIR
 
 DERMA_SYSTEM_PROMPT = """You are "Derma Assist", an advanced clinical triage co-pilot designed for a dermatology decision-support platform.
@@ -27,6 +28,7 @@ Strict Medical Guardrails & Protocol:
 4. Actionable Home Care: Offer safe, non-medicinal supportive guidance (cool damp compresses, avoiding picking/scratching, hypoallergenic moisturizers, keeping the area dry).
 5. Professional Referral: Always outline what type of specialist or examination (e.g., dermoscopy, skin scraping, patch testing, biopsy) a dermatologist would typically perform.
 6. Mandatory Legal Disclaimer: Conclude with a brief reminder that Derma Assist is an educational triage assistant, not an in-person clinical diagnosis.
+7. Language Mirroring & Native Fluency: Always reply in the exact language or mix the patient speaks in. If the patient asks in Hindi or Hinglish (e.g., "नमस्ते डॉक्टर", "mujhe daag aur khujli ho rahi hai"), respond warmly and naturally in fluent Hindi/Hinglish with clear, accessible medical terms (त्वचा, खुजली, संक्रमण, डॉक्टर से सलाह), maintaining an empathetic Indian doctor tone.
 """
 
 def generate_offline_clinical_response(top_condition: str, user_message: str) -> str:
@@ -82,6 +84,7 @@ class GeminiService:
                     pass
 
         self._client = None
+        self._quota_exhausted_until = 0.0
         self._init_client()
 
     def _init_client(self):
@@ -115,6 +118,7 @@ class GeminiService:
 
     def update_api_key(self, new_key: str):
         self.api_key = new_key.strip()
+        self._quota_exhausted_until = 0.0
         self._init_client()
 
     def is_configured(self) -> bool:
@@ -138,8 +142,9 @@ class GeminiService:
             top_condition = top_pred.get("display_name", top_pred.get("class_name", "eczema"))
             top_confidence = str(top_pred.get("confidence_percentage", "N/A"))
 
-        # Check if active Gemini client is ready
-        if not self.is_configured():
+        import time
+        # Check if active Gemini client is ready and not quota-exhausted
+        if not self.is_configured() or time.time() < self._quota_exhausted_until:
             return generate_offline_clinical_response(top_condition, message)
 
         try:
@@ -185,8 +190,86 @@ class GeminiService:
 
             return generate_offline_clinical_response(top_condition, message)
         except Exception as e:
-            print(f"[GeminiService] Error during generation, using fallback: {e}")
+            if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
+                self._quota_exhausted_until = time.time() + 300.0
+            print(f"[GeminiService] Error during chat generation, using fallback: {e}")
             return generate_offline_clinical_response(top_condition, message)
+
+    def analyze_multimodal_image(self, image: Image.Image) -> Optional[Dict[str, Any]]:
+        """
+        Executes real multimodal vision inference using Google Gemini 2.5 Flash on raw image pixels.
+        Returns predicted class probabilities and clinical vision observations, or None if offline/quota limited.
+        """
+        import time
+        if not self.is_configured() or time.time() < self._quota_exhausted_until:
+            return None
+
+        prompt = (
+            "You are an expert board-certified dermatologist assisting a clinical decision-support co-pilot. "
+            "Analyze the dermatological features in this photograph across these 8 diagnostic categories:\n"
+            "- eczema\n- contact_dermatitis\n- fungal_infections\n- psoriasis\n"
+            "- acne_rosacea\n- viral_eruptions\n- benign_nevi\n- melanoma_suspicious\n\n"
+            "Return ONLY a valid JSON object in this exact schema without any markdown formatting:\n"
+            "{\n"
+            '  "probabilities": {\n'
+            '    "eczema": float,\n'
+            '    "contact_dermatitis": float,\n'
+            '    "fungal_infections": float,\n'
+            '    "psoriasis": float,\n'
+            '    "acne_rosacea": float,\n'
+            '    "viral_eruptions": float,\n'
+            '    "benign_nevi": float,\n'
+            '    "melanoma_suspicious": float\n'
+            "  },\n"
+            '  "primary_finding": "string",\n'
+            '  "clinical_observations": "string",\n'
+            '  "risk_level": "Low / Benign" | "Moderate" | "High / Urgent Attention"\n'
+            "}"
+        )
+
+        try:
+            # Resize image to reasonable size for Gemini multimodal processing
+            img_gemini = image.convert("RGB")
+            if max(img_gemini.size) > 1024:
+                img_gemini.thumbnail((1024, 1024))
+
+            if getattr(self, "_use_modern_sdk", False):
+                from google.genai import types
+                response = self._client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[prompt, img_gemini],
+                    config=types.GenerateContentConfig(
+                        temperature=0.2,
+                        response_mime_type="application/json"
+                    )
+                )
+                if response and response.text:
+                    import json
+                    text = response.text.strip()
+                    if text.startswith("```"):
+                        text = text.split("```")[1]
+                        if text.startswith("json"):
+                            text = text[4:]
+                    data = json.loads(text.strip())
+                    return data
+            else:
+                response = self._client.generate_content([prompt, img_gemini])
+                if response and response.text:
+                    import json
+                    text = response.text.strip()
+                    if text.startswith("```"):
+                        text = text.split("```")[1]
+                        if text.startswith("json"):
+                            text = text[4:]
+                    data = json.loads(text.strip())
+                    return data
+        except Exception as e:
+            if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
+                self._quota_exhausted_until = time.time() + 300.0
+            print(f"[GeminiService] Multimodal vision query note: {e}. Falling back to PyTorch Deep Vision engine.")
+            return None
+
+        return None
 
 # Singleton instance
 gemini_service = GeminiService()

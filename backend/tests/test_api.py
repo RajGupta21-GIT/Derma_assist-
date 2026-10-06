@@ -205,3 +205,120 @@ def test_synthesize_endpoint_with_questionnaire():
     # Check that Tinea Incognito / steroid alert was triggered
     assert any("steroid" in alert.lower() or "tinea incognito" in alert.lower() for alert in data.get("red_flag_alerts", []))
 
+
+def test_non_skin_image_rejection_classify():
+    # White document image (100% white pixels)
+    white_img = Image.new("RGB", (128, 128), color=(255, 255, 255))
+    buf = io.BytesIO()
+    white_img.save(buf, format="JPEG")
+    
+    response = client.post(
+        "/api/classify",
+        files={"file": ("doc.jpg", buf.getvalue(), "image/jpeg")}
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert data["is_valid_skin"] is False
+    assert "No human skin tissue detected" in data["error"]
+
+
+def test_non_skin_image_rejection_synthesize():
+    # Blue graphic image (0% skin chrominance)
+    blue_img = Image.new("RGB", (128, 128), color=(0, 0, 255))
+    buf = io.BytesIO()
+    blue_img.save(buf, format="JPEG")
+    b64_str = f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('utf-8')}"
+    
+    response = client.post(
+        "/api/synthesize",
+        data={"image_base64": b64_str, "questionnaire_json": "{}"}
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert data["is_valid_skin"] is False
+    assert "No human skin tissue detected" in data["error"]
+
+
+def test_monotonic_confidence_ordering():
+    import json
+    img_bytes = create_test_image_bytes()
+    b64_str = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+    
+    # Questionnaire triggering safety override
+    q_data = {
+        "chief_complaint": "mole_spot",
+        "sensations": ["bleeding"],
+        "branch_data": {"bleeding": True, "abcde_evolution": True},
+        "red_flags": []
+    }
+    response = client.post(
+        "/api/synthesize",
+        data={"image_base64": b64_str, "questionnaire_json": json.dumps(q_data)}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    preds = data["predictions"]
+    assert len(preds) == 3
+    # Enforce strictly monotonic confidence: Rank 1 > Rank 2 > Rank 3
+    assert preds[0]["confidence"] > preds[1]["confidence"]
+    assert preds[1]["confidence"] > preds[2]["confidence"]
+    assert data["safety_override_triggered"] is True
+
+
+def test_systemic_emergency_prioritization():
+    import json
+    img_bytes = create_test_image_bytes()
+    b64_str = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+    
+    # Systemic emergency: facial angioedema with high fever
+    q_data = {
+        "chief_complaint": "mole_spot",
+        "red_flags": ["facial_swelling", "high_fever"]
+    }
+    response = client.post(
+        "/api/synthesize",
+        data={"image_base64": b64_str, "questionnaire_json": json.dumps(q_data)}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["safety_override_triggered"] is True
+    # Rank 1 must be elevated emergency and not benign mole
+    assert data["top_class"] != "benign_nevi"
+    preds = data["predictions"]
+    assert preds[0]["confidence"] > preds[1]["confidence"] > preds[2]["confidence"]
+
+
+def test_flashcard_metadata_in_synthesis():
+    import json
+    img_bytes = create_test_image_bytes()
+    b64_str = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+    
+    q_data = {
+        "chief_complaint": "itchy_rash",
+        "location": "groin_folds",
+        "branch_data": {"annular_ring": True, "sweat_moisture": True}
+    }
+    response = client.post(
+        "/api/synthesize",
+        data={"image_base64": b64_str, "questionnaire_json": json.dumps(q_data)}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    
+    # 1. Top-level metadata presence
+    assert "root_causes" in data and len(data["root_causes"]) >= 2
+    assert "care_matrix" in data
+    assert "dos" in data["care_matrix"] and len(data["care_matrix"]["dos"]) >= 2
+    assert "donts" in data["care_matrix"] and len(data["care_matrix"]["donts"]) >= 2
+    assert "specialist_procedures" in data and len(data["specialist_procedures"]) >= 2
+
+    # 2. Every prediction candidate has its own metadata for interactive exploration
+    for pred in data["predictions"]:
+        assert "root_causes" in pred and len(pred["root_causes"]) >= 2
+        assert "care_matrix" in pred
+        assert "dos" in pred["care_matrix"] and len(pred["care_matrix"]["dos"]) >= 2
+        assert "donts" in pred["care_matrix"] and len(pred["care_matrix"]["donts"]) >= 2
+        assert "specialist_procedures" in pred and len(pred["specialist_procedures"]) >= 2
+
+
+

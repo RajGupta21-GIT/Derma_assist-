@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Check, AlertTriangle, Sparkles, ShieldCheck, Sun, CheckCircle2, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, AlertTriangle, Sparkles, ShieldCheck, Sun, CheckCircle2 } from 'lucide-react';
 import InteractiveCompanion from './InteractiveCompanion';
 
 const CHIEF_COMPLAINTS = [
@@ -95,18 +95,24 @@ const SENSATIONS = [
   { id: 'asymptomatic', label: 'Asymptomatic (No Sensation)', desc: 'No pain, itching, or physical irritation' },
 ];
 
-export default function StepWizard({ onComplete, onCancel }) {
-  const [currentStep, setCurrentStep] = useState(1);
+export default function StepWizard({
+  onComplete,
+  onCancel,
+  initialStep = 1,
+  initialData = null,
+  onStepChange,
+}) {
+  const [currentStep, setCurrentStep] = useState(initialStep || 1);
   const totalSteps = 8;
 
-  // Questionnaire States
-  const [complaint, setComplaint] = useState('');
-  const [fitzpatrick, setFitzpatrick] = useState('type_iv');
-  const [location, setLocation] = useState('');
-  const [distribution, setDistribution] = useState('single');
-  const [duration, setDuration] = useState('');
-  const [sensations, setSensations] = useState([]);
-  const [branchData, setBranchData] = useState({
+  // Questionnaire States (restored from initialData if reloading)
+  const [complaint, setComplaint] = useState(initialData?.chief_complaint || '');
+  const [fitzpatrick, setFitzpatrick] = useState(initialData?.fitzpatrick_tone || 'type_iv');
+  const [location, setLocation] = useState(initialData?.location || '');
+  const [distribution, setDistribution] = useState(initialData?.distribution || 'single');
+  const [duration, setDuration] = useState(initialData?.duration || '');
+  const [sensations, setSensations] = useState(initialData?.sensations || []);
+  const [branchData, setBranchData] = useState(initialData?.branch_data || {
     abcde_asymmetry: false,
     abcde_border: false,
     abcde_color: false,
@@ -122,12 +128,29 @@ export default function StepWizard({ onComplete, onCancel }) {
     tropical_humidity: false,
     otc_steroid_use: false,
   });
-  const [priorTreatments, setPriorTreatments] = useState('');
-  const [redFlags, setRedFlags] = useState([]);
+  const [priorTreatments, setPriorTreatments] = useState(initialData?.prior_treatments || '');
+  const [redFlags, setRedFlags] = useState(initialData?.red_flags || []);
 
   // Micro-interaction states
   const [animatingId, setAnimatingId] = useState(null);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const soundEnabled = true;
+
+  // Sync draft questionnaire progress to parent for page reload persistence
+  useEffect(() => {
+    if (onStepChange) {
+      onStepChange(currentStep, {
+        chief_complaint: complaint,
+        fitzpatrick_tone: fitzpatrick,
+        location,
+        distribution,
+        duration,
+        sensations,
+        branch_data: branchData,
+        prior_treatments: priorTreatments,
+        red_flags: redFlags,
+      });
+    }
+  }, [currentStep, complaint, fitzpatrick, location, distribution, duration, sensations, branchData, priorTreatments, redFlags, onStepChange]);
 
   // Soft Audio Feedback synthesizer using Web Audio API (cached singleton context)
   const audioCtxRef = useRef(null);
@@ -253,14 +276,6 @@ export default function StepWizard({ onComplete, onCancel }) {
             <span className="text-slate-600 font-bold">
               {currentStep <= totalSteps ? `Step ${currentStep} of ${totalSteps}` : 'Intake Complete'}
             </span>
-            <button
-              type="button"
-              onClick={() => setSoundEnabled(!soundEnabled)}
-              className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-slate-800 transition-colors"
-              title={soundEnabled ? 'Mute micro-interaction audio' : 'Enable audio feedback'}
-            >
-              {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-teal-700" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
           </div>
         </div>
 
@@ -284,8 +299,6 @@ export default function StepWizard({ onComplete, onCancel }) {
         branchData={branchData}
         priorTreatments={priorTreatments}
         redFlags={redFlags}
-        soundEnabled={soundEnabled}
-        onToggleSound={() => setSoundEnabled(!soundEnabled)}
       />
 
       {/* STEP 1: Chief Complaint (1-Click Auto-Advance) */}

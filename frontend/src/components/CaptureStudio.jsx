@@ -118,7 +118,7 @@ export default function CaptureStudio({ onPhotoCaptured, onAnalyze, onBack, isAn
         </div>
         <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-start gap-2.5 text-xs text-slate-600">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-          <span>Ensure sharp focus. Do not blur or apply digital filters.</span>
+          <span>Real human skin photo required. Screenshots, web pages, and documents will be rejected.</span>
         </div>
       </div>
 

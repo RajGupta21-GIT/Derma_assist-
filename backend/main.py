@@ -142,6 +142,16 @@ async def classify_image(file: Optional[UploadFile] = File(None), image_base64: 
 
     try:
         results = classifier.predict(pil_img)
+        if not results.get("is_valid_skin", True):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "is_valid_skin": False,
+                    "error": results.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area."),
+                    "detail": results.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area.")
+                }
+            )
+
         # Attach backward-compatible aliases
         if results.get("predictions"):
             results["top_probability"] = round(float(results["predictions"][0]["confidence"]) * 100, 1)
@@ -164,6 +174,16 @@ async def classify_image_json(req: ClassifyJsonRequest):
         raw_bytes = base64.b64decode(clean_b64)
         pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
         results = classifier.predict(pil_img)
+        if not results.get("is_valid_skin", True):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "is_valid_skin": False,
+                    "error": results.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area."),
+                    "detail": results.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area.")
+                }
+            )
+
         if results.get("predictions"):
             results["top_probability"] = round(float(results["predictions"][0]["confidence"]) * 100, 1)
             results["differential_diagnoses"] = results["predictions"]
@@ -210,16 +230,28 @@ async def synthesize_multimodal(
             print(f"[Synthesize] Questionnaire parse error: {e}")
 
     try:
-        # 1. Run Deep Vision model & Grad-CAM
+        # 1. Run Deep Vision model & Grad-CAM (with Gatekeeper)
         vision_res = classifier.predict(pil_img)
+        if not vision_res.get("is_valid_skin", True):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "is_valid_skin": False,
+                    "error": vision_res.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area."),
+                    "detail": vision_res.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area.")
+                }
+            )
 
         # 2. Compute Bayesian Multimodal Fusion with safety overrides
         multimodal_res = compute_multimodal_synthesis(vision_res["predictions"], questionnaire_dict)
 
-        # 3. Attach Grad-CAM visual explainability and execution metrics
+        # 3. Attach Grad-CAM visual explainability, engine and execution metrics
+        multimodal_res["is_valid_skin"] = True
         multimodal_res["gradcam"] = vision_res["gradcam"]
         multimodal_res["inference_time_ms"] = vision_res["inference_time_ms"]
         multimodal_res["vision_predictions"] = vision_res["predictions"]
+        multimodal_res["vision_engine"] = vision_res.get("vision_engine", "PyTorch Deep Convolutional Vision")
+        multimodal_res["melanin_metrics"] = vision_res.get("melanin_metrics")
 
         return multimodal_res
     except Exception as e:
