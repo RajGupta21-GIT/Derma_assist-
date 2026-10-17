@@ -44,7 +44,8 @@ def generate_pdf_report(
     patient_gender: str = "N/A",
     questionnaire_data: dict = None,
     classification_result: dict = None,
-    original_img_base64: str = None
+    original_img_base64: str = None,
+    gradcam_img_base64: str = None
 ) -> bytes:
     """
     Builds a structured multimodal PDF report and returns the raw bytes.
@@ -82,11 +83,17 @@ def generate_pdf_report(
     pdf.line(12, pdf.get_y(), 198, pdf.get_y())
     pdf.ln(2.5)
 
-    if questionnaire_data:
-        complaint = questionnaire_data.get("chief_complaint", "N/A").replace("_", " ").title()
-        location = questionnaire_data.get("location", "N/A").replace("_", " ").title()
-        duration = questionnaire_data.get("duration", "N/A").replace("_", " ").title()
-        sensations = ", ".join(questionnaire_data.get("sensations", [])) or "None specified"
+    if questionnaire_data and isinstance(questionnaire_data, dict):
+        complaint = (questionnaire_data.get("chief_complaint") or "N/A").replace("_", " ").title()
+        location = (questionnaire_data.get("location") or "N/A").replace("_", " ").title()
+        duration = (questionnaire_data.get("duration") or "N/A").replace("_", " ").title()
+        raw_sensations = questionnaire_data.get("sensations")
+        if isinstance(raw_sensations, list):
+            sensations = ", ".join(str(s) for s in raw_sensations) or "None specified"
+        elif raw_sensations:
+            sensations = str(raw_sensations)
+        else:
+            sensations = "None specified"
         
         pdf.set_font("Helvetica", "", 8)
         pdf.set_text_color(40, 40, 40)
@@ -96,9 +103,9 @@ def generate_pdf_report(
         pdf.cell(0, 4.5, f"Reported Sensations: {sensations}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         # Branch specific findings
-        branch = questionnaire_data.get("branch_data", {})
-        if branch:
-            branch_items = [f"{k.replace('_', ' ').title()}: Yes" for k, v in branch.items() if v]
+        branch = questionnaire_data.get("branch_data")
+        if isinstance(branch, dict):
+            branch_items = [f"{str(k).replace('_', ' ').title()}: Yes" for k, v in branch.items() if v]
             if branch_items:
                 pdf.set_font("Helvetica", "I", 7.5)
                 pdf.multi_cell(0, 4, f"Targeted Diagnostic Criteria Identified: {'; '.join(branch_items)}")
@@ -120,17 +127,27 @@ def generate_pdf_report(
     cam_path = os.path.join(temp_dir, "cam.png")
 
     try:
-        if original_img_base64:
-            clean_b64 = original_img_base64.split(",")[-1]
+        if original_img_base64 and len(original_img_base64) > 30:
+            clean_b64 = original_img_base64.split(",")[-1].strip()
             with open(orig_path, "wb") as f:
                 f.write(base64.b64decode(clean_b64))
         else:
             Image.new("RGB", (200, 200), (220, 220, 220)).save(orig_path)
 
-        if classification_result and "gradcam" in classification_result:
-            cam_b64 = classification_result["gradcam"].get("overlay_base64", "").split(",")[-1]
+        cam_data = gradcam_img_base64
+        if not cam_data and classification_result and isinstance(classification_result, dict):
+            c_cam = classification_result.get("gradcam")
+            if isinstance(c_cam, dict):
+                cam_data = c_cam.get("overlay_base64") or c_cam.get("heatmap_base64")
+            elif isinstance(c_cam, str):
+                cam_data = c_cam
+            if not cam_data and "gradcam_base64" in classification_result:
+                cam_data = classification_result.get("gradcam_base64")
+
+        if cam_data and len(cam_data) > 30:
+            clean_cam = cam_data.split(",")[-1].strip()
             with open(cam_path, "wb") as f:
-                f.write(base64.b64decode(cam_b64))
+                f.write(base64.b64decode(clean_cam))
         else:
             Image.new("RGB", (200, 200), (220, 220, 220)).save(cam_path)
 
@@ -144,14 +161,16 @@ def generate_pdf_report(
         pdf.set_text_color(30, 41, 59)
         pdf.cell(68, 5, "Multimodal Clinical Indication:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        top_cond = classification_result.get("top_condition", "Indeterminate") if classification_result else "N/A"
-        top_conf = classification_result.get("top_confidence", "0%") if classification_result else "0%"
-        risk = classification_result.get("overall_risk", "Moderate") if classification_result else "Moderate"
+        top_cond = (classification_result.get("top_condition") if classification_result else None) or "Indeterminate"
+        top_conf = (classification_result.get("top_confidence") or classification_result.get("top_probability") if classification_result else None) or "0%"
+        if isinstance(top_conf, (int, float)):
+            top_conf = f"{top_conf:.1f}%"
+        risk = (classification_result.get("overall_risk") or classification_result.get("risk_level") if classification_result else None) or "Moderate"
 
         pdf.set_x(126)
         pdf.set_font("Helvetica", "B", 10.5)
         pdf.set_text_color(16, 118, 110)
-        pdf.multi_cell(68, 5, top_cond)
+        pdf.multi_cell(68, 5, str(top_cond))
 
         pdf.set_x(126)
         pdf.set_font("Helvetica", "", 8.5)
@@ -177,6 +196,9 @@ def generate_pdf_report(
     except Exception as e:
         print(f"[ReportService] Image embed error: {e}")
         pdf.set_y(pdf.get_y() + 8)
+    finally:
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     # Section 3: 3-Column Visual Infographic Clinical Care Dossier
     pdf.set_font("Helvetica", "B", 10.5)
@@ -327,19 +349,48 @@ def generate_pdf_report(
     pdf.line(12, pdf.get_y(), 198, pdf.get_y())
     pdf.ln(2.5)
 
-    if classification_result and "predictions" in classification_result:
-        for idx, pred in enumerate(classification_result["predictions"][:3]):
+    candidates = []
+    if classification_result and isinstance(classification_result, dict):
+        candidates = classification_result.get("predictions") or classification_result.get("differential_diagnoses") or []
+
+    if candidates:
+        for idx, pred in enumerate(candidates[:3]):
+            if not isinstance(pred, dict):
+                continue
+            display_name = (
+                pred.get("display_name")
+                or pred.get("class_name")
+                or pred.get("condition")
+                or f"Candidate #{idx+1}"
+            )
+            if "_" in display_name and " " not in display_name:
+                display_name = display_name.replace("_", " ").title()
+
+            conf_pct = pred.get("confidence_percentage")
+            if not conf_pct:
+                conf_val = pred.get("confidence") or pred.get("probability") or 0.0
+                if isinstance(conf_val, (int, float)):
+                    if conf_val <= 1.0:
+                        conf_pct = f"{conf_val * 100:.1f}%"
+                    else:
+                        conf_pct = f"{conf_val:.1f}%"
+                else:
+                    conf_pct = str(conf_val)
+
+            risk_level = pred.get("risk_level", "Moderate")
+            desc = pred.get("description") or pred.get("presentation") or "Clinical dermatological condition."
+
             pdf.set_font("Helvetica", "B", 8.5)
             pdf.set_text_color(30, 41, 59)
-            pdf.cell(85, 4.5, f"#{idx+1} {pred['display_name']}", new_x=XPos.RIGHT, new_y=YPos.TOP)
-            pdf.cell(30, 4.5, f"Score: {pred['confidence_percentage']}", new_x=XPos.RIGHT, new_y=YPos.TOP)
+            pdf.cell(85, 4.5, f"#{idx+1} {display_name}", new_x=XPos.RIGHT, new_y=YPos.TOP)
+            pdf.cell(30, 4.5, f"Score: {conf_pct}", new_x=XPos.RIGHT, new_y=YPos.TOP)
             pdf.set_font("Helvetica", "I", 7.5)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 4.5, f"Risk: {pred['risk_level']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.cell(0, 4.5, f"Risk: {risk_level}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
             pdf.set_font("Helvetica", "", 7.5)
             pdf.set_text_color(70, 70, 70)
-            pdf.multi_cell(0, 3.8, f"Clinical context: {pred['description']}")
+            pdf.multi_cell(0, 3.8, f"Clinical context: {desc}")
             pdf.ln(1)
     
     # Rationale note

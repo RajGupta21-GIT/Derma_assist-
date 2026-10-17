@@ -168,6 +168,50 @@ def test_pdf_report_export():
     assert len(content) > 1000
 
 
+def test_pdf_report_robust_predictions_and_aliases():
+    """Verify that /report and /api/report accept predictions without display_name, handle alias paths, and include gradcam."""
+    img_bytes = create_test_image_bytes()
+    b64_str = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+
+    payload = {
+        "patient_name": "Rajiv Sharma",
+        "patient_age": "45",
+        "patient_gender": "Male",
+        "classification_result": {
+            "top_condition": "Eczema (Atopic Dermatitis)",
+            "top_confidence": "85.0%",
+            "overall_risk": "Moderate",
+            "predictions": [
+                {
+                    "condition": "Eczema",
+                    "class_name": "eczema",
+                    "confidence": 0.85,
+                    "probability": 85.0,
+                    "risk_level": "Moderate"
+                },
+                {
+                    "condition": "Contact Dermatitis",
+                    "class_name": "contact_dermatitis",
+                    "confidence": 0.10,
+                    "probability": 10.0,
+                    "risk_level": "Moderate"
+                }
+            ]
+        },
+        "original_img_base64": b64_str,
+        "gradcam_image_b64": b64_str,
+        "chat_summary": "Triage consultation completed successfully."
+    }
+
+    # Test both /api/report and the alias /report
+    for route in ["/api/report", "/report"]:
+        resp = client.post(route, json=payload)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/pdf"
+        assert resp.content.startswith(b"%PDF")
+        assert len(resp.content) > 1000
+
+
 def test_synthesize_endpoint_with_questionnaire():
     import json
     img_bytes = create_test_image_bytes()

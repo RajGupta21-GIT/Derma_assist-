@@ -278,6 +278,7 @@ async def chat_consult(req: ChatRequest):
     }
 
 @app.post("/api/update-api-key")
+@app.post("/update-api-key")
 async def update_key(req: ApiKeyUpdate):
     gemini_service.update_api_key(req.api_key)
     return {
@@ -286,6 +287,7 @@ async def update_key(req: ApiKeyUpdate):
     }
 
 @app.post("/api/report")
+@app.post("/report")
 async def generate_report(req: ReportRequest):
     """
     Generates and returns the downloadable PDF Medical Consultation Report with clinical history.
@@ -300,6 +302,7 @@ async def generate_report(req: ReportRequest):
 
         class_res = req.classification_result or req.analysis_data or {}
         orig_img = req.original_img_base64 or req.original_image_b64
+        cam_img = req.gradcam_image_b64
 
         pdf_bytes = generate_pdf_report(
             patient_name=p_name,
@@ -307,7 +310,8 @@ async def generate_report(req: ReportRequest):
             patient_gender=p_gender or "N/A",
             questionnaire_data=req.questionnaire_data or {},
             classification_result=class_res,
-            original_img_base64=orig_img
+            original_img_base64=orig_img,
+            gradcam_img_base64=cam_img
         )
         return Response(
             content=pdf_bytes,
