@@ -88,7 +88,7 @@ def generate_gradcam_overlay(image: Image.Image, predicted_class: str, target_si
     # Encode as Base64 strings
     def pil_to_base64(p_img: Image.Image) -> str:
         buf = io.BytesIO()
-        p_img.save(buf, format="PNG")
+        p_img.save(buf, format="PNG", compress_level=1)
         return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('utf-8')}"
 
     focus_area_pct = float(np.mean(smooth_act > 0.55) * 100.0)

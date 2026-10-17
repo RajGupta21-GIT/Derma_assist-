@@ -95,6 +95,172 @@ const SENSATIONS = [
   { id: 'asymptomatic', label: 'Asymptomatic (No Sensation)', desc: 'No pain, itching, or physical irritation' },
 ];
 
+const BRANCH_CRITERIA = {
+  mole_spot: [
+    { id: 'abcde_asymmetry', label: 'A — Asymmetry', desc: 'One half does not match the other in shape or contour.' },
+    { id: 'abcde_border', label: 'B — Border Irregularity', desc: 'Edges are ragged, notched, scalloped, or poorly defined.' },
+    { id: 'abcde_color', label: 'C — Color Variegation', desc: 'Multiple shades of brown, black, blue, red, or white in the same lesion.' },
+    { id: 'abcde_diameter', label: 'D — Diameter > 6mm', desc: 'Larger than a pencil eraser (approx 6mm across).' },
+    { id: 'abcde_evolution', label: 'E — Evolution / Rapid Change', desc: 'Noticeable enlargement, elevation, or bleeding recently.' },
+  ],
+  red_rash: [
+    { id: 'annular_ring', label: 'Annular Ring Pattern', desc: 'Circular lesion with raised scaly edge and central clearing (Tinea / Ringworm hallmark).' },
+    { id: 'contact_allergen', label: 'Contact Trigger', desc: 'Started after contact with cosmetics, soaps, detergents, plants, or pets.' },
+    { id: 'flexural_folds', label: 'Flexural Crease Localization', desc: 'Located primarily in skin creases (inner elbows, neck, groin, behind knees).' },
+  ],
+  scaly_plaque: [
+    { id: 'extensor_elbow_knee', label: 'Extensor Surface Distribution', desc: 'Located over outer elbows, knees, or lower back (hallmark of Plaque Psoriasis).' },
+    { id: 'flexural_folds', label: 'Flexural / Crease Involvement', desc: 'Found in skin folds, with moist cracked or lichenified patches.' },
+  ],
+  facial_flare: [
+    { id: 'flushing_spicy_heat', label: 'Flushing Provoked by Heat/Spices/Sun', desc: 'Sudden facial erythema provoked by hot drinks, spices, sunlight, or alcohol (Rosacea).' },
+    { id: 'comedones_blackheads', label: 'Comedones & Pustules', desc: 'Blocked pores (blackheads/whiteheads) with inflammatory papules (Acne Vulgaris).' },
+  ],
+};
+
+const EMERGENCY_RED_FLAGS = [
+  { id: 'high_fever', label: 'High Fever (> 101°F / 38.5°C) with chills or lethargy' },
+  { id: 'facial_swelling', label: 'Rapid facial/lip angioedema or difficulty breathing' },
+  { id: 'rapid_purpura', label: 'Sudden dark purple/black bruises spreading rapidly' },
+];
+
+const TROPICAL_FACTORS = [
+  {
+    id: 'tropical_humidity',
+    label: 'Tropical humidity / high sweat retention',
+    desc: 'Living in a hot/humid climate or wearing tight occlusive synthetic clothing.',
+  },
+  {
+    id: 'otc_steroid_use',
+    label: 'Used OTC steroid creams (Betnovate, Quadriderm, Panderm)',
+    desc: 'Steroid creams applied on fungal rashes suppress redness and trigger Tinea Incognito.',
+  },
+];
+
+function WizardOptionButton({
+  title,
+  subtitle,
+  icon,
+  isSelected,
+  isAnimating,
+  onClick,
+  variant = 'complaint',
+}) {
+  if (variant === 'complaint') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`min-h-[72px] p-4 rounded-2xl border text-left flex items-center gap-4 transition-all duration-200 cursor-pointer ${
+          isAnimating || isSelected
+            ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-600/30 scale-[1.01] shadow-md'
+            : 'border-slate-200 bg-white hover:border-teal-300 hover:bg-teal-50/20 hover:shadow-xs'
+        }`}
+      >
+        <span className="text-2xl p-2.5 bg-slate-50 rounded-xl shrink-0 border border-slate-100">{icon}</span>
+        <div className="flex-1">
+          <h3 className="font-bold text-sm text-slate-900">{title}</h3>
+          <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
+        </div>
+        {(isSelected || isAnimating) && (
+          <div className="w-6 h-6 rounded-full bg-teal-700 text-white flex items-center justify-center shrink-0 animate-scale-in">
+            <Check className="w-3.5 h-3.5" />
+          </div>
+        )}
+      </button>
+    );
+  }
+
+  if (variant === 'location') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`min-h-[64px] p-3.5 rounded-xl border text-left flex items-center justify-between transition-all duration-200 cursor-pointer ${
+          isAnimating || isSelected
+            ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-600/30 scale-[1.01] shadow-sm'
+            : 'border-slate-200 bg-white hover:border-teal-300 hover:bg-slate-50'
+        }`}
+      >
+        <div>
+          <p className="font-bold text-xs text-slate-900">{title}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>
+        </div>
+        {(isSelected || isAnimating) && <Check className="w-4 h-4 text-teal-700" />}
+      </button>
+    );
+  }
+
+  if (variant === 'duration') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`min-h-[64px] p-4 rounded-2xl border text-left flex items-center justify-between transition-all duration-200 cursor-pointer ${
+          isAnimating || isSelected
+            ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-600/30 scale-[1.01] shadow-md'
+            : 'border-slate-200 bg-white hover:border-teal-300 hover:bg-slate-50/60'
+        }`}
+      >
+        <div>
+          <h3 className="font-bold text-sm text-slate-900">{title}</h3>
+          <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
+        </div>
+        {(isSelected || isAnimating) && (
+          <div className="w-5 h-5 rounded-full bg-teal-700 text-white flex items-center justify-center shrink-0">
+            <Check className="w-3.5 h-3.5" />
+          </div>
+        )}
+      </button>
+    );
+  }
+
+  if (variant === 'sensation') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`min-h-[64px] p-3.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+          isSelected
+            ? 'border-teal-700 bg-teal-50/50 ring-2 ring-teal-700/20 shadow-xs'
+            : 'border-slate-200 bg-white hover:border-slate-300'
+        }`}
+      >
+        <div>
+          <span className="font-bold text-xs text-slate-900">{title}</span>
+          <p className="text-[11px] text-slate-500">{subtitle}</p>
+        </div>
+        <div
+          className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
+            isSelected ? 'bg-teal-700 border-teal-700 text-white' : 'border-slate-300 bg-white'
+          }`}
+        >
+          {isSelected && <Check className="w-3.5 h-3.5" />}
+        </div>
+      </button>
+    );
+  }
+
+  if (variant === 'red_flag') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`w-full min-h-[52px] p-3 rounded-xl border text-left flex items-center justify-between text-xs transition-all ${
+          isSelected
+            ? 'border-rose-500 bg-rose-50 text-rose-900 font-semibold shadow-2xs'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+        }`}
+      >
+        <span>{title}</span>
+        <span className="font-bold">{isSelected ? '⚠️ Selected' : '+'}</span>
+      </button>
+    );
+  }
+
+  return null;
+}
+
 export default function StepWizard({
   onComplete,
   onCancel,
@@ -182,10 +348,30 @@ export default function StepWizard({
     }
   };
 
+  // Auto-advance timer reference with cancellation and re-entrancy prevention
+  const autoAdvanceTimerRef = useRef(null);
+
+  const cancelPendingAutoAdvance = () => {
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+    setAnimatingId(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (autoAdvanceTimerRef.current) {
+        clearTimeout(autoAdvanceTimerRef.current);
+      }
+    };
+  }, []);
+
   // Keyboard shortcut navigation (Left Arrow / Escape to go back)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'ArrowLeft' || e.key === 'Escape') {
+        cancelPendingAutoAdvance();
         if (currentStep > 1) {
           setCurrentStep((prev) => prev - 1);
         } else if (onCancel) {
@@ -197,15 +383,21 @@ export default function StepWizard({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentStep, onCancel]);
 
-  // 1-Click Auto-Advance Handler (250ms Active Highlight Transition)
+  // 1-Click Auto-Advance Handler (250ms Active Highlight Transition with Re-entrancy Lock)
   const handleAutoSelect = (setter, value, optionId) => {
+    if (animatingId) return; // Prevent double-triggering / rapid-fire step skipping
     setter(value);
     setAnimatingId(optionId);
     playChime();
 
-    setTimeout(() => {
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+    }
+
+    autoAdvanceTimerRef.current = setTimeout(() => {
       setAnimatingId(null);
       setCurrentStep((prev) => Math.min(prev + 1, totalSteps));
+      autoAdvanceTimerRef.current = null;
     }, 250);
   };
 
@@ -257,6 +449,7 @@ export default function StepWizard({
         <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-2.5">
           <button
             onClick={() => {
+              cancelPendingAutoAdvance();
               if (currentStep > 1) {
                 setCurrentStep((prev) => prev - 1);
               } else if (onCancel) {
@@ -313,33 +506,18 @@ export default function StepWizard({
           </div>
 
           <div className="grid grid-cols-1 gap-3 pt-1">
-            {CHIEF_COMPLAINTS.map((item) => {
-              const isSelected = complaint === item.id;
-              const isAnimating = animatingId === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleAutoSelect(setComplaint, item.id, item.id)}
-                  className={`min-h-[72px] p-4 rounded-2xl border text-left flex items-center gap-4 transition-all duration-200 cursor-pointer ${
-                    isAnimating || isSelected
-                      ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-600/30 scale-[1.01] shadow-md'
-                      : 'border-slate-200 bg-white hover:border-teal-300 hover:bg-teal-50/20 hover:shadow-xs'
-                  }`}
-                >
-                  <span className="text-2xl p-2.5 bg-slate-50 rounded-xl shrink-0 border border-slate-100">{item.icon}</span>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-sm text-slate-900">{item.title}</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">{item.subtitle}</p>
-                  </div>
-                  {(isSelected || isAnimating) && (
-                    <div className="w-6 h-6 rounded-full bg-teal-700 text-white flex items-center justify-center shrink-0 animate-scale-in">
-                      <Check className="w-3.5 h-3.5" />
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+            {CHIEF_COMPLAINTS.map((item) => (
+              <WizardOptionButton
+                key={item.id}
+                title={item.title}
+                subtitle={item.subtitle}
+                icon={item.icon}
+                isSelected={complaint === item.id}
+                isAnimating={animatingId === item.id}
+                onClick={() => handleAutoSelect(setComplaint, item.id, item.id)}
+                variant="complaint"
+              />
+            ))}
           </div>
         </div>
       )}
@@ -459,28 +637,17 @@ export default function StepWizard({
 
             {/* Anatomical Locations (1-Click Auto-Advance) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {LOCATIONS.map((loc) => {
-                const isSelected = location === loc.id;
-                const isAnimating = animatingId === loc.id;
-                return (
-                  <button
-                    key={loc.id}
-                    type="button"
-                    onClick={() => handleAutoSelect(setLocation, loc.id, loc.id)}
-                    className={`min-h-[64px] p-3.5 rounded-xl border text-left flex items-center justify-between transition-all duration-200 cursor-pointer ${
-                      isAnimating || isSelected
-                        ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-600/30 scale-[1.01] shadow-sm'
-                        : 'border-slate-200 bg-white hover:border-teal-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div>
-                      <p className="font-bold text-xs text-slate-900">{loc.title}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{loc.desc}</p>
-                    </div>
-                    {(isSelected || isAnimating) && <Check className="w-4 h-4 text-teal-700" />}
-                  </button>
-                );
-              })}
+              {LOCATIONS.map((loc) => (
+                <WizardOptionButton
+                  key={loc.id}
+                  title={loc.title}
+                  subtitle={loc.desc}
+                  isSelected={location === loc.id}
+                  isAnimating={animatingId === loc.id}
+                  onClick={() => handleAutoSelect(setLocation, loc.id, loc.id)}
+                  variant="location"
+                />
+              ))}
             </div>
 
             {/* Direct Advance if Location Already Selected */}
@@ -488,6 +655,7 @@ export default function StepWizard({
               <button
                 type="button"
                 onClick={() => {
+                  cancelPendingAutoAdvance();
                   playChime();
                   setCurrentStep(4);
                 }}
@@ -512,32 +680,17 @@ export default function StepWizard({
           </div>
 
           <div className="grid grid-cols-1 gap-3 pt-1">
-            {DURATIONS.map((dur) => {
-              const isSelected = duration === dur.id;
-              const isAnimating = animatingId === dur.id;
-              return (
-                <button
-                  key={dur.id}
-                  type="button"
-                  onClick={() => handleAutoSelect(setDuration, dur.id, dur.id)}
-                  className={`min-h-[64px] p-4 rounded-2xl border text-left flex items-center justify-between transition-all duration-200 cursor-pointer ${
-                    isAnimating || isSelected
-                      ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-600/30 scale-[1.01] shadow-md'
-                      : 'border-slate-200 bg-white hover:border-teal-300 hover:bg-slate-50/60'
-                  }`}
-                >
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900">{dur.title}</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">{dur.desc}</p>
-                  </div>
-                  {(isSelected || isAnimating) && (
-                    <div className="w-5 h-5 rounded-full bg-teal-700 text-white flex items-center justify-center shrink-0">
-                      <Check className="w-3 h-3" />
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+            {DURATIONS.map((dur) => (
+              <WizardOptionButton
+                key={dur.id}
+                title={dur.title}
+                subtitle={dur.desc}
+                isSelected={duration === dur.id}
+                isAnimating={animatingId === dur.id}
+                onClick={() => handleAutoSelect(setDuration, dur.id, dur.id)}
+                variant="duration"
+              />
+            ))}
           </div>
         </div>
       )}
@@ -554,33 +707,16 @@ export default function StepWizard({
           </div>
 
           <div className="grid grid-cols-1 gap-2.5">
-            {SENSATIONS.map((sens) => {
-              const isSelected = sensations.includes(sens.id);
-              return (
-                <button
-                  key={sens.id}
-                  type="button"
-                  onClick={() => toggleSensation(sens.id)}
-                  className={`min-h-[64px] p-3.5 rounded-xl border text-left flex items-center justify-between transition-all ${
-                    isSelected
-                      ? 'border-teal-700 bg-teal-50/50 ring-2 ring-teal-700/20 shadow-xs'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <div>
-                    <span className="font-bold text-xs text-slate-900">{sens.label}</span>
-                    <p className="text-[11px] text-slate-500">{sens.desc}</p>
-                  </div>
-                  <div
-                    className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
-                      isSelected ? 'bg-teal-700 border-teal-700 text-white' : 'border-slate-300 bg-white'
-                    }`}
-                  >
-                    {isSelected && <Check className="w-3.5 h-3.5" />}
-                  </div>
-                </button>
-              );
-            })}
+            {SENSATIONS.map((sens) => (
+              <WizardOptionButton
+                key={sens.id}
+                title={sens.label}
+                subtitle={sens.desc}
+                isSelected={sensations.includes(sens.id)}
+                onClick={() => toggleSensation(sens.id)}
+                variant="sensation"
+              />
+            ))}
           </div>
 
           <button
@@ -610,107 +746,10 @@ export default function StepWizard({
             </p>
           </div>
 
-          {/* Mole ABCDE Branch */}
-          {complaint === 'mole_spot' && (
+          {/* Targeted Diagnostic Criteria Branch */}
+          {BRANCH_CRITERIA[complaint] && (
             <div className="space-y-2.5">
-              {[
-                { id: 'abcde_asymmetry', label: 'A — Asymmetry', desc: 'One half does not match the other in shape or contour.' },
-                { id: 'abcde_border', label: 'B — Border Irregularity', desc: 'Edges are ragged, notched, scalloped, or poorly defined.' },
-                { id: 'abcde_color', label: 'C — Color Variegation', desc: 'Multiple shades of brown, black, blue, red, or white in the same lesion.' },
-                { id: 'abcde_diameter', label: 'D — Diameter > 6mm', desc: 'Larger than a pencil eraser (approx 6mm across).' },
-                { id: 'abcde_evolution', label: 'E — Evolution / Rapid Change', desc: 'Noticeable enlargement, elevation, or bleeding recently.' },
-              ].map((crit) => (
-                <label
-                  key={crit.id}
-                  className={`min-h-[64px] p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${
-                    branchData[crit.id]
-                      ? 'border-teal-700 bg-teal-50/50 ring-2 ring-teal-700/20 shadow-xs'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={branchData[crit.id]}
-                    onChange={() => toggleBranch(crit.id)}
-                    className="mt-1 rounded text-teal-700 focus:ring-teal-700 w-4 h-4"
-                  />
-                  <div>
-                    <span className="font-bold text-xs text-slate-900">{crit.label}</span>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{crit.desc}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-          )}
-
-          {/* Rash Branch */}
-          {complaint === 'red_rash' && (
-            <div className="space-y-2.5">
-              {[
-                { id: 'annular_ring', label: 'Annular Ring Pattern', desc: 'Circular lesion with raised scaly edge and central clearing (Tinea / Ringworm hallmark).' },
-                { id: 'contact_allergen', label: 'Contact Trigger', desc: 'Started after contact with cosmetics, soaps, detergents, plants, or pets.' },
-                { id: 'flexural_folds', label: 'Flexural Crease Localization', desc: 'Located primarily in skin creases (inner elbows, neck, groin, behind knees).' },
-              ].map((crit) => (
-                <label
-                  key={crit.id}
-                  className={`min-h-[64px] p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${
-                    branchData[crit.id]
-                      ? 'border-teal-700 bg-teal-50/50 ring-2 ring-teal-700/20 shadow-xs'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={branchData[crit.id]}
-                    onChange={() => toggleBranch(crit.id)}
-                    className="mt-1 rounded text-teal-700 focus:ring-teal-700 w-4 h-4"
-                  />
-                  <div>
-                    <span className="font-bold text-xs text-slate-900">{crit.label}</span>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{crit.desc}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-          )}
-
-          {/* Scaly Plaque Branch */}
-          {complaint === 'scaly_plaque' && (
-            <div className="space-y-2.5">
-              {[
-                { id: 'extensor_elbow_knee', label: 'Extensor Surface Distribution', desc: 'Located over outer elbows, knees, or lower back (hallmark of Plaque Psoriasis).' },
-                { id: 'flexural_folds', label: 'Flexural / Crease Involvement', desc: 'Found in skin folds, with moist cracked or lichenified patches.' },
-              ].map((crit) => (
-                <label
-                  key={crit.id}
-                  className={`min-h-[64px] p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${
-                    branchData[crit.id]
-                      ? 'border-teal-700 bg-teal-50/50 ring-2 ring-teal-700/20 shadow-xs'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={branchData[crit.id]}
-                    onChange={() => toggleBranch(crit.id)}
-                    className="mt-1 rounded text-teal-700 focus:ring-teal-700 w-4 h-4"
-                  />
-                  <div>
-                    <span className="font-bold text-xs text-slate-900">{crit.label}</span>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{crit.desc}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-          )}
-
-          {/* Facial Flare Branch */}
-          {complaint === 'facial_flare' && (
-            <div className="space-y-2.5">
-              {[
-                { id: 'flushing_spicy_heat', label: 'Flushing Provoked by Heat/Spices/Sun', desc: 'Sudden facial erythema provoked by hot drinks, spices, sunlight, or alcohol (Rosacea).' },
-                { id: 'comedones_blackheads', label: 'Comedones & Pustules', desc: 'Blocked pores (blackheads/whiteheads) with inflammatory papules (Acne Vulgaris).' },
-              ].map((crit) => (
+              {BRANCH_CRITERIA[complaint].map((crit) => (
                 <label
                   key={crit.id}
                   className={`min-h-[64px] p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${
@@ -743,31 +782,20 @@ export default function StepWizard({
               </span>
             </div>
 
-            <label className="flex items-start gap-3 cursor-pointer text-xs select-none">
-              <input
-                type="checkbox"
-                checked={branchData.tropical_humidity}
-                onChange={() => toggleBranch('tropical_humidity')}
-                className="mt-0.5 rounded text-teal-700 focus:ring-teal-700 w-4 h-4"
-              />
-              <div>
-                <span className="font-semibold text-slate-900">Tropical humidity / high sweat retention</span>
-                <p className="text-[11px] text-slate-500">Living in a hot/humid climate or wearing tight occlusive synthetic clothing.</p>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 cursor-pointer text-xs select-none">
-              <input
-                type="checkbox"
-                checked={branchData.otc_steroid_use}
-                onChange={() => toggleBranch('otc_steroid_use')}
-                className="mt-0.5 rounded text-teal-700 focus:ring-teal-700 w-4 h-4"
-              />
-              <div>
-                <span className="font-semibold text-slate-900">Used OTC steroid creams (Betnovate, Quadriderm, Panderm)</span>
-                <p className="text-[11px] text-slate-500">Steroid creams applied on fungal rashes suppress redness and trigger Tinea Incognito.</p>
-              </div>
-            </label>
+            {TROPICAL_FACTORS.map((factor) => (
+              <label key={factor.id} className="flex items-start gap-3 cursor-pointer text-xs select-none">
+                <input
+                  type="checkbox"
+                  checked={branchData[factor.id]}
+                  onChange={() => toggleBranch(factor.id)}
+                  className="mt-0.5 rounded text-teal-700 focus:ring-teal-700 w-4 h-4"
+                />
+                <div>
+                  <span className="font-semibold text-slate-900">{factor.label}</span>
+                  <p className="text-[11px] text-slate-500">{factor.desc}</p>
+                </div>
+              </label>
+            ))}
           </div>
 
           <button
@@ -812,28 +840,15 @@ export default function StepWizard({
               <AlertTriangle className="w-4 h-4" /> Emergency Warning Signs (Select if any apply)
             </label>
             <div className="space-y-2">
-              {[
-                { id: 'high_fever', label: 'High Fever (> 101°F / 38.5°C) with chills or lethargy' },
-                { id: 'facial_swelling', label: 'Rapid facial/lip angioedema or difficulty breathing' },
-                { id: 'rapid_purpura', label: 'Sudden dark purple/black bruises spreading rapidly' },
-              ].map((flag) => {
-                const isSelected = redFlags.includes(flag.id);
-                return (
-                  <button
-                    key={flag.id}
-                    type="button"
-                    onClick={() => toggleRedFlag(flag.id)}
-                    className={`w-full min-h-[52px] p-3 rounded-xl border text-left flex items-center justify-between text-xs transition-all ${
-                      isSelected
-                        ? 'border-rose-500 bg-rose-50 text-rose-900 font-semibold shadow-2xs'
-                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span>{flag.label}</span>
-                    <span className="font-bold">{isSelected ? '⚠️ Selected' : '+'}</span>
-                  </button>
-                );
-              })}
+              {EMERGENCY_RED_FLAGS.map((flag) => (
+                <WizardOptionButton
+                  key={flag.id}
+                  title={flag.label}
+                  isSelected={redFlags.includes(flag.id)}
+                  onClick={() => toggleRedFlag(flag.id)}
+                  variant="red_flag"
+                />
+              ))}
             </div>
           </div>
 
@@ -906,7 +921,10 @@ export default function StepWizard({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setCurrentStep(1)}
+              onClick={() => {
+                cancelPendingAutoAdvance();
+                setCurrentStep(1);
+              }}
               className="px-4 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-all"
             >
               Edit Responses

@@ -5,8 +5,8 @@ import LandingHero from './components/LandingHero';
 import StepWizard from './components/StepWizard';
 import CaptureStudio from './components/CaptureStudio';
 import ClinicalDossier from './components/ClinicalDossier';
-import ConsultationDrawer from './components/ConsultationDrawer';
-import ReportModal from './components/ReportModal';
+const ConsultationDrawer = React.lazy(() => import('./components/ConsultationDrawer'));
+const ReportModal = React.lazy(() => import('./components/ReportModal'));
 import { checkHealth, synthesizeMultimodal } from './services/api';
 
 const SESSION_STORAGE_KEY = 'derma_assist_session';
@@ -100,42 +100,51 @@ export default function App() {
     checkHealth().then((data) => setHealth(data));
   }, []);
 
-  // Synchronize state changes to sessionStorage for reload persistence
+  // Synchronize state changes to sessionStorage with 250ms debounce and beforeunload immediate flush
   useEffect(() => {
-    try {
-      if (typeof window === 'undefined' || !window.sessionStorage) return;
-
-      const serializableImage = selectedImage ? {
-        base64: selectedImage.base64,
-        preview: selectedImage.preview || selectedImage.base64,
-      } : null;
-
-      const sessionPayload = {
-        currentView,
-        questionnaireData,
-        wizardStep,
-        selectedImage: serializableImage,
-        analysisResults,
-      };
-      window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionPayload));
-    } catch (err) {
-      console.warn('Failed to persist session to sessionStorage:', err);
-      // Quota resilience: if large image base64 exceeds sessionStorage limit, persist questions & dossier state without image
+    const saveToSession = () => {
       try {
-        if (typeof window !== 'undefined' && window.sessionStorage) {
-          const fallbackPayload = {
-            currentView,
-            questionnaireData,
-            wizardStep,
-            selectedImage: null,
-            analysisResults,
-          };
-          window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(fallbackPayload));
+        if (typeof window === 'undefined' || !window.sessionStorage) return;
+
+        const serializableImage = selectedImage ? {
+          base64: selectedImage.base64,
+          preview: selectedImage.preview || selectedImage.base64,
+        } : null;
+
+        const sessionPayload = {
+          currentView,
+          questionnaireData,
+          wizardStep,
+          selectedImage: serializableImage,
+          analysisResults,
+        };
+        window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionPayload));
+      } catch (err) {
+        console.warn('Failed to persist session to sessionStorage:', err);
+        try {
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            const fallbackPayload = {
+              currentView,
+              questionnaireData,
+              wizardStep,
+              selectedImage: null,
+              analysisResults,
+            };
+            window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(fallbackPayload));
+          }
+        } catch (fallbackErr) {
+          console.warn('Fallback sessionStorage persistence failed:', fallbackErr);
         }
-      } catch (fallbackErr) {
-        console.warn('Fallback sessionStorage persistence also failed:', fallbackErr);
       }
-    }
+    };
+
+    const timer = setTimeout(saveToSession, 250);
+    window.addEventListener('beforeunload', saveToSession);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('beforeunload', saveToSession);
+    };
   }, [currentView, questionnaireData, wizardStep, selectedImage, analysisResults]);
 
   // Step 1 -> Step 2: User starts assessment from landing
@@ -287,23 +296,28 @@ export default function App() {
           )}
         </main>
 
-        {/* Slide-over Consultation Chat Drawer */}
-        <ConsultationDrawer
-          isOpen={isDrawerOpen}
-          onClose={() => setIsDrawerOpen(false)}
-          visionContext={analysisResults}
-          questionnaireContext={questionnaireData}
-          apiKey={apiKey}
-        />
+        {/* Slide-over Consultation Chat Drawer & PDF Modal */}
+        <React.Suspense fallback={null}>
+          {isDrawerOpen && (
+            <ConsultationDrawer
+              isOpen={isDrawerOpen}
+              onClose={() => setIsDrawerOpen(false)}
+              visionContext={analysisResults}
+              questionnaireContext={questionnaireData}
+              apiKey={apiKey}
+            />
+          )}
 
-        {/* Report PDF Modal */}
-        <ReportModal
-          isOpen={isReportModalOpen}
-          onClose={() => setIsReportModalOpen(false)}
-          classificationResult={analysisResults}
-          questionnaireData={questionnaireData}
-          originalImagePreview={selectedImage?.preview}
-        />
+          {isReportModalOpen && (
+            <ReportModal
+              isOpen={isReportModalOpen}
+              onClose={() => setIsReportModalOpen(false)}
+              classificationResult={analysisResults}
+              questionnaireData={questionnaireData}
+              originalImagePreview={selectedImage?.preview}
+            />
+          )}
+        </React.Suspense>
 
         {/* Subtle Clinical Footer */}
         <footer className="mt-auto border-t border-slate-200 bg-white py-4">

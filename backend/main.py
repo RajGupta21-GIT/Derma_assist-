@@ -94,9 +94,34 @@ def get_classes():
         "metadata": CLASS_METADATA
     }
 
+_DEMO_SAMPLES_CACHE = None
+
+def _parse_image_input(file_bytes: Optional[bytes] = None, b64_str: Optional[str] = None) -> Image.Image:
+    """Fast unified parser for upload file bytes or base64 data."""
+    if file_bytes:
+        try:
+            return Image.open(io.BytesIO(file_bytes)).convert("RGB")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid image file.")
+    if b64_str:
+        try:
+            clean_b64 = b64_str.split(",")[-1].strip()
+            return Image.open(io.BytesIO(base64.b64decode(clean_b64))).convert("RGB")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid base64 image data.")
+    raise HTTPException(status_code=400, detail="No image provided.")
+
+def _gatekeeper_rejection(error_msg: Optional[str] = None) -> JSONResponse:
+    msg = error_msg or "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area."
+    return JSONResponse(status_code=400, content={"is_valid_skin": False, "error": msg, "detail": msg})
+
 @app.get("/api/demo-samples")
-def get_demo_samples():
-    """Returns curated demo samples for offline exhibition & triage testing."""
+def get_demo_samples(refresh: bool = False):
+    """Returns curated demo samples for offline exhibition & triage testing (Cached in RAM with refresh support)."""
+    global _DEMO_SAMPLES_CACHE
+    if not refresh and _DEMO_SAMPLES_CACHE is not None and _DEMO_SAMPLES_CACHE.get("samples"):
+        return _DEMO_SAMPLES_CACHE
+
     samples = []
     demo_dir = Path(__file__).resolve().parent / "demo_samples"
     sample_files = [
@@ -117,42 +142,21 @@ def get_demo_samples():
                 "risk_level": risk,
                 "image_base64": f"data:image/jpeg;base64,{b64}"
             })
+    if samples:
+        _DEMO_SAMPLES_CACHE = {"samples": samples}
     return {"samples": samples}
 
 @app.post("/api/classify")
 async def classify_image(file: Optional[UploadFile] = File(None), image_base64: Optional[str] = Form(None)):
     """Pure deep vision classification + Grad-CAM heatmap."""
-    pil_img = None
-
-    if file:
-        contents = await file.read()
-        try:
-            pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid image file.")
-    elif image_base64:
-        try:
-            clean_b64 = image_base64.split(",")[-1]
-            raw_bytes = base64.b64decode(clean_b64)
-            pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid base64 image data.")
-    else:
-        raise HTTPException(status_code=400, detail="No image provided.")
+    file_bytes = await file.read() if file else None
+    pil_img = _parse_image_input(file_bytes=file_bytes, b64_str=image_base64)
 
     try:
         results = classifier.predict(pil_img)
         if not results.get("is_valid_skin", True):
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "is_valid_skin": False,
-                    "error": results.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area."),
-                    "detail": results.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area.")
-                }
-            )
+            return _gatekeeper_rejection(results.get("error"))
 
-        # Attach backward-compatible aliases
         if results.get("predictions"):
             results["top_probability"] = round(float(results["predictions"][0]["confidence"]) * 100, 1)
             results["differential_diagnoses"] = results["predictions"]
@@ -170,19 +174,10 @@ async def classify_image_json(req: ClassifyJsonRequest):
     if not b64_data:
         raise HTTPException(status_code=400, detail="No image_base64 provided.")
     try:
-        clean_b64 = b64_data.split(",")[-1]
-        raw_bytes = base64.b64decode(clean_b64)
-        pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+        pil_img = _parse_image_input(b64_str=b64_data)
         results = classifier.predict(pil_img)
         if not results.get("is_valid_skin", True):
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "is_valid_skin": False,
-                    "error": results.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area."),
-                    "detail": results.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area.")
-                }
-            )
+            return _gatekeeper_rejection(results.get("error"))
 
         if results.get("predictions"):
             results["top_probability"] = round(float(results["predictions"][0]["confidence"]) * 100, 1)
@@ -204,24 +199,9 @@ async def synthesize_multimodal(
     Multimodal synthesis endpoint:
     Runs deep vision model & Grad-CAM, then computes Bayesian fusion with questionnaire answers.
     """
-    pil_img = None
-    if file:
-        contents = await file.read()
-        try:
-            pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid image file.")
-    elif image_base64:
-        try:
-            clean_b64 = image_base64.split(",")[-1]
-            raw_bytes = base64.b64decode(clean_b64)
-            pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid base64 image data.")
-    else:
-        raise HTTPException(status_code=400, detail="No image provided for multimodal evaluation.")
+    file_bytes = await file.read() if file else None
+    pil_img = _parse_image_input(file_bytes=file_bytes, b64_str=image_base64)
 
-    # Parse questionnaire data
     questionnaire_dict = {}
     if questionnaire_json:
         try:
@@ -230,22 +210,11 @@ async def synthesize_multimodal(
             print(f"[Synthesize] Questionnaire parse error: {e}")
 
     try:
-        # 1. Run Deep Vision model & Grad-CAM (with Gatekeeper)
         vision_res = classifier.predict(pil_img)
         if not vision_res.get("is_valid_skin", True):
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "is_valid_skin": False,
-                    "error": vision_res.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area."),
-                    "detail": vision_res.get("error", "No human skin tissue detected in the uploaded image. Please upload a clear clinical photograph of the affected skin area.")
-                }
-            )
+            return _gatekeeper_rejection(vision_res.get("error"))
 
-        # 2. Compute Bayesian Multimodal Fusion with safety overrides
         multimodal_res = compute_multimodal_synthesis(vision_res["predictions"], questionnaire_dict)
-
-        # 3. Attach Grad-CAM visual explainability, engine and execution metrics
         multimodal_res["is_valid_skin"] = True
         multimodal_res["gradcam"] = vision_res["gradcam"]
         multimodal_res["inference_time_ms"] = vision_res["inference_time_ms"]
@@ -348,6 +317,30 @@ async def generate_report(req: ReportRequest):
     except Exception as e:
         print(f"[Report Error] {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate clinical PDF: {str(e)}")
+
+@app.get("/api/reports/individual-pdf")
+async def download_individual_pdf():
+    """Serves the 4-page individual capstone report for Raj Gupta."""
+    pdf_path = BASE_DIR / "Raj_Gupta_Individual_Project_Report.pdf"
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="Individual report PDF not found.")
+    return FileResponse(
+        path=str(pdf_path),
+        filename="Raj_Gupta_Individual_Project_Report.pdf",
+        media_type="application/pdf"
+    )
+
+@app.get("/api/reports/optimization-pdf")
+async def download_optimization_pdf():
+    """Serves the technical optimization and architecture report."""
+    pdf_path = BASE_DIR / "Derma_Assist_Optimization_Report.pdf"
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="Optimization report PDF not found.")
+    return FileResponse(
+        path=str(pdf_path),
+        filename="Derma_Assist_Optimization_Report.pdf",
+        media_type="application/pdf"
+    )
 
 # Production Static Serving of React Frontend
 frontend_dist = BASE_DIR / "frontend" / "dist"

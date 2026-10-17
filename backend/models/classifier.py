@@ -156,7 +156,7 @@ class DermaClassifier:
             raise RuntimeError(f"Trained model {MODEL_PATH} is not loaded.")
 
         tensor = preprocess_pil_to_tensor(image).to(self.device)
-        with torch.no_grad():
+        with torch.inference_mode():
             logits = self.pytorch_model(tensor)
             # Logit temperature scaling (tau = 0.85) to sharpen confidence
             tau = 0.85

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   X, 
   Mic, 
@@ -36,8 +36,24 @@ export default function VoiceConsultModal({
   const recognitionRef = useRef(null);
   const synthRef = useRef(typeof window !== 'undefined' ? window.speechSynthesis : null);
   const transcriptEndRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const isOpenRef = useRef(isOpen);
 
-  // Initialize Voices
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (synthRef.current) {
+        synthRef.current.cancel();
+      }
+    };
+  }, []);
+
+  // Initialize Voices with clean detachment on unmount
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const loadVoices = () => {
@@ -48,6 +64,13 @@ export default function VoiceConsultModal({
       };
       loadVoices();
       window.speechSynthesis.onvoiceschanged = loadVoices;
+
+      return () => {
+        if (window.speechSynthesis) {
+          window.speechSynthesis.onvoiceschanged = null;
+          window.speechSynthesis.cancel();
+        }
+      };
     }
   }, []);
 
@@ -98,6 +121,8 @@ export default function VoiceConsultModal({
       if (synthRef.current) {
         synthRef.current.cancel();
       }
+      setIsSpeaking(false);
+      setIsListening(false);
     };
   }, []);
 
@@ -122,12 +147,15 @@ export default function VoiceConsultModal({
         speakResponse(initialGreeting);
       }
     } else {
+      isOpenRef.current = false;
       if (synthRef.current) {
         synthRef.current.cancel();
       }
-      if (recognitionRef.current && isListening) {
-        recognitionRef.current.stop();
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
       }
+      setIsSpeaking(false);
+      setIsListening(false);
     }
   }, [isOpen]);
 
@@ -135,9 +163,40 @@ export default function VoiceConsultModal({
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversation, isProcessing, userTranscript]);
 
+  // Memoized preferred voice selection (avoids full array linear traversal on every spoken sentence)
+  const preferredVoices = useMemo(() => {
+    const voices = availableVoices.length > 0 
+      ? availableVoices 
+      : (typeof window !== 'undefined' && 'speechSynthesis' in window ? window.speechSynthesis.getVoices() : []);
+
+    if (!voices || voices.length === 0) return { hindi: null, english: null };
+
+    // Search for authentic Indian Hindi speech synthesis engines
+    const hindiVoice = voices.find(
+      (v) => (v.lang === 'hi-IN' || v.lang.startsWith('hi')) && (
+        v.name.includes('Google') ||
+        v.name.includes('Swara') ||
+        v.name.includes('Hemant') ||
+        v.name.includes('Madhur') ||
+        v.name.includes('Kalpana')
+      )
+    ) || voices.find(
+      (v) => v.lang === 'hi-IN' || v.lang.startsWith('hi') || v.name.includes('Hindi') || v.name.includes('हिन्दी')
+    ) || voices.find(
+      // High quality Indian English fallback if Hindi voice pack not installed on Windows
+      (v) => v.lang === 'en-IN' || v.name.includes('India') || v.name.includes('Heera') || v.name.includes('Ravi')
+    ) || null;
+
+    const englishVoice = voices.find(
+      (v) => v.name.includes('Samantha') || v.name.includes('Google UK English Female') || (v.lang === 'en-US' && v.name.includes('Female'))
+    ) || voices.find((v) => v.lang.startsWith('en')) || null;
+
+    return { hindi: hindiVoice, english: englishVoice };
+  }, [availableVoices]);
+
   // Voice synthesis (TTS)
   const speakResponse = (text) => {
-    if (!synthRef.current || voiceMuted) return;
+    if (!synthRef.current || voiceMuted || !isMountedRef.current || !isOpenRef.current) return;
     synthRef.current.cancel();
 
     // Clean markdown symbols for clearer audio
@@ -155,35 +214,16 @@ export default function VoiceConsultModal({
     const hasHindiVocabulary = /\b(namaste|aap|kya|twacha|khujli|dawai|doctor|daag|jalan|ilaj|hai|hain|karein|chahiye|dekhiye|kripya|sujan)\b/i.test(cleanText);
     const isHindiResponse = hasDevanagari || hasHindiVocabulary;
 
-    const voices = availableVoices.length > 0 ? availableVoices : (synthRef.current ? synthRef.current.getVoices() : []);
-
-    let preferredVoice = null;
     if (isHindiResponse) {
       utterance.lang = 'hi-IN';
-      // Search for authentic Indian Hindi speech synthesis engines
-      preferredVoice = voices.find(
-        (v) => (v.lang === 'hi-IN' || v.lang.startsWith('hi')) && (
-          v.name.includes('Google') ||
-          v.name.includes('Swara') ||
-          v.name.includes('Hemant') ||
-          v.name.includes('Madhur') ||
-          v.name.includes('Kalpana')
-        )
-      ) || voices.find(
-        (v) => v.lang === 'hi-IN' || v.lang.startsWith('hi') || v.name.includes('Hindi') || v.name.includes('हिन्दी')
-      ) || voices.find(
-        // High quality Indian English fallback if Hindi voice pack not installed on Windows
-        (v) => v.lang === 'en-IN' || v.name.includes('India') || v.name.includes('Heera') || v.name.includes('Ravi')
-      );
+      if (preferredVoices.hindi) {
+        utterance.voice = preferredVoices.hindi;
+      }
     } else {
       utterance.lang = 'en-US';
-      preferredVoice = voices.find(
-        (v) => v.name.includes('Samantha') || v.name.includes('Google UK English Female') || (v.lang === 'en-US' && v.name.includes('Female'))
-      ) || voices.find((v) => v.lang.startsWith('en'));
-    }
-
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
+      if (preferredVoices.english) {
+        utterance.voice = preferredVoices.english;
+      }
     }
 
     utterance.onstart = () => setIsSpeaking(true);
@@ -249,6 +289,8 @@ export default function VoiceConsultModal({
         apiKey,
       });
 
+      if (!isMountedRef.current || !isOpenRef.current) return;
+
       const reply = res.reply || 'Thank you for explaining your symptoms. Be sure to consult a licensed dermatologist for definitive diagnosis.';
 
       const docEntry = {
@@ -261,6 +303,8 @@ export default function VoiceConsultModal({
       setConversation((prev) => [...prev, docEntry]);
       speakResponse(reply);
     } catch (err) {
+      if (!isMountedRef.current || !isOpenRef.current) return;
+
       const errMsg = 'I understood your question, but our clinical connection experienced a momentary delay. Please ensure you keep the affected area clean and avoid scratching.';
       setConversation((prev) => [
         ...prev,
@@ -273,7 +317,9 @@ export default function VoiceConsultModal({
       ]);
       speakResponse(errMsg);
     } finally {
-      setIsProcessing(false);
+      if (isMountedRef.current) {
+        setIsProcessing(false);
+      }
     }
   };
 

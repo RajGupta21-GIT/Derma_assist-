@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   FileDown, 
   MessageSquare, 
@@ -261,27 +261,35 @@ export default function ClinicalDossier({
   const activeIsHighRisk = safetyOverrideTriggered || activeRisk?.toLowerCase().includes('high');
   const activeIsModerateRisk = !activeIsHighRisk && activeRisk?.toLowerCase().includes('moderate');
 
-  // Dynamic flashcard contents with robust fallback protection
-  const displayedRootCauses = (activePred.root_causes && activePred.root_causes.length > 0)
-    ? activePred.root_causes
-    : (results.root_causes && results.root_causes.length > 0)
-    ? results.root_causes
-    : defaultRootCauses;
+  // Dynamic flashcard contents with robust fallback protection (Memoized)
+  const displayedRootCauses = useMemo(() => {
+    return (activePred.root_causes && activePred.root_causes.length > 0)
+      ? activePred.root_causes
+      : (results.root_causes && results.root_causes.length > 0)
+      ? results.root_causes
+      : defaultRootCauses;
+  }, [activePred.root_causes, results.root_causes]);
 
   const activeCareMatrix = activePred.care_matrix || results.care_matrix || {};
-  const displayedDonts = (activeCareMatrix.donts && activeCareMatrix.donts.length > 0)
-    ? activeCareMatrix.donts
-    : defaultCareMatrix.donts;
+  const displayedDonts = useMemo(() => {
+    return (activeCareMatrix.donts && activeCareMatrix.donts.length > 0)
+      ? activeCareMatrix.donts
+      : defaultCareMatrix.donts;
+  }, [activeCareMatrix.donts]);
 
-  const displayedDos = (activeCareMatrix.dos && activeCareMatrix.dos.length > 0)
-    ? activeCareMatrix.dos
-    : defaultCareMatrix.dos;
+  const displayedDos = useMemo(() => {
+    return (activeCareMatrix.dos && activeCareMatrix.dos.length > 0)
+      ? activeCareMatrix.dos
+      : defaultCareMatrix.dos;
+  }, [activeCareMatrix.dos]);
 
-  const displayedProcedures = (activePred.specialist_procedures && activePred.specialist_procedures.length > 0)
-    ? activePred.specialist_procedures
-    : (results.specialist_procedures && results.specialist_procedures.length > 0)
-    ? results.specialist_procedures
-    : defaultProcedures;
+  const displayedProcedures = useMemo(() => {
+    return (activePred.specialist_procedures && activePred.specialist_procedures.length > 0)
+      ? activePred.specialist_procedures
+      : (results.specialist_procedures && results.specialist_procedures.length > 0)
+      ? results.specialist_procedures
+      : defaultProcedures;
+  }, [activePred.specialist_procedures, results.specialist_procedures]);
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 animate-fade-in space-y-8">
@@ -935,14 +943,16 @@ export default function ClinicalDossier({
         </div>
       </div>
 
-      {/* Voice Teleconsult Modal */}
-      <VoiceConsultModal
-        isOpen={isVoiceModalOpen}
-        onClose={() => setIsVoiceModalOpen(false)}
-        visionContext={results}
-        questionnaireContext={questionnaireData}
-        apiKey={apiKey}
-      />
+      {/* Voice Teleconsult Modal (Mounted on-demand) */}
+      {isVoiceModalOpen && (
+        <VoiceConsultModal
+          isOpen={isVoiceModalOpen}
+          onClose={() => setIsVoiceModalOpen(false)}
+          visionContext={results}
+          questionnaireContext={questionnaireData}
+          apiKey={apiKey}
+        />
+      )}
     </div>
   );
 }
